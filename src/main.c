@@ -5,9 +5,7 @@ int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
-    prepare_bg(WIDTH, HEIGHT);
-    save_bg_webp("output/bg.webp");
-    destroy_bg();
+    save_bg_animated_webp("output/bg.webp", WIDTH, HEIGHT);
 
     return 0;
 }
