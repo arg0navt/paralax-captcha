@@ -137,8 +137,8 @@ static int rng_range(int min, int max) {
 Square *generate_layout(int width, int height, uint32_t seed, int *out_count) {
     rng_seed(seed);
 
-    /* Base cell: 2 (square) + 4 = 6px → jitter 0..1 → gap = 3..5px */
-    const int cell = SQUARE_SIZE + 4;
+    /* Base cell: 2 (square) + 3 = 5px → jitter 0..2 → gap = 2..5px */
+    const int cell = SQUARE_SIZE + 3;
 
     /* Upper bound: ceil(w/cell) * ceil(h/cell) */
     int cols = (width  + cell - 1) / cell;
@@ -152,8 +152,8 @@ Square *generate_layout(int width, int height, uint32_t seed, int *out_count) {
         /* Stagger every other row by half a cell to break horizontal lines */
         int row_shift = (gy & 1) ? (cell / 2) : 0;
         for (int gx = 0; gx * cell < width; gx++) {
-            int jx = rng_range(0, 1);
-            int jy = rng_range(0, 1);
+            int jx = rng_range(0, 2);
+            int jy = rng_range(0, 2);
             int sx = gx * cell + row_shift + jx;
             int sy = gy * cell + jy;
             /* Clamp so the square stays inside the canvas */
@@ -264,7 +264,7 @@ static uint8_t *generate_text_mask(int width, int height) {
     RECT rc = {0, 0, width, height};
     FillRect(mem_dc, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH));
 
-    /* Create bold 30px Arial */
+    /* Create bold Arial */
     HFONT font = CreateFontW(-ANIM_FONT_SIZE, 0, 0, 0, FW_BOLD,
         FALSE, FALSE, FALSE, DEFAULT_CHARSET,
         OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
@@ -272,15 +272,28 @@ static uint8_t *generate_text_mask(int width, int height) {
     if (font) {
         HFONT old_font = (HFONT)SelectObject(mem_dc, font);
 
-        const wchar_t *text = L"\x041F\x0440\x0438\x0432\x0435\x0442";
-        int text_len = 6;
-        SIZE sz;
-        GetTextExtentPoint32W(mem_dc, text, text_len, &sz);
+        const wchar_t *text = L"Hello";
+        int text_len = 5;
 
+        /* Measure total width with ANIM_LETTER_GAP between letters */
+        int total_w = 0;
+        SIZE char_sz;
+        for (int c = 0; c < text_len; c++) {
+            GetTextExtentPoint32W(mem_dc, &text[c], 1, &char_sz);
+            total_w += char_sz.cx;
+            if (c < text_len - 1) total_w += ANIM_LETTER_GAP;
+        }
+
+        /* Draw each letter individually with gaps */
         SetTextColor(mem_dc, RGB(255, 255, 255));
         SetBkMode(mem_dc, TRANSPARENT);
-        TextOutW(mem_dc, (width - sz.cx) / 2, (height - sz.cy) / 2,
-                 text, text_len);
+        int x_pos = (width - total_w) / 2;
+        int y_pos = (height - char_sz.cy) / 2;
+        for (int c = 0; c < text_len; c++) {
+            GetTextExtentPoint32W(mem_dc, &text[c], 1, &char_sz);
+            TextOutW(mem_dc, x_pos, y_pos, &text[c], 1);
+            x_pos += char_sz.cx + ANIM_LETTER_GAP;
+        }
 
         SelectObject(mem_dc, old_font);
         DeleteObject(font);
@@ -300,16 +313,42 @@ static uint8_t *generate_text_mask(int width, int height) {
     return mask;
 }
 
+/* ── dilate_mask ────────────────────────────────────────────────── *
+ *  Expands the mask by `radius` pixels: any pixel within `radius`
+ *  of a set pixel also becomes set.  Done in-place.               */
+static void dilate_mask(uint8_t *mask, int width, int height, int radius) {
+    uint8_t *src = (uint8_t *)malloc((size_t)width * height);
+    if (!src) return;
+    memcpy(src, mask, (size_t)width * height);
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            if (src[y * width + x]) continue; /* already set */
+            int found = 0;
+            for (int dy = -radius; dy <= radius && !found; dy++) {
+                for (int dx = -radius; dx <= radius && !found; dx++) {
+                    int nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        if (src[ny * width + nx]) found = 1;
+                    }
+                }
+            }
+            if (found) mask[y * width + x] = 1;
+        }
+    }
+    free(src);
+}
+
 /* ── mask_to_squares ────────────────────────────────────────────── *
  *  Converts a binary text mask into an array of 2×2 Squares using
- *  the same 6px grid + jitter + stagger pattern as the background
- *  layout, so the text squares are visually identical to bg squares.
+ *  the same grid + jitter + stagger as the background layout.
  *  One pixel per square is randomly made transparent.               */
 static Square *mask_to_squares(const uint8_t *mask, int width, int height,
                                uint32_t seed, int *out_count) {
     rng_seed(seed);
 
-    const int cell = SQUARE_SIZE + 4;
+    /* Same cell as background: 2 + 3 = 5px, jitter 0..2 → gap 2..5px */
+    const int cell = SQUARE_SIZE + 3;
     int capacity = (width / SQUARE_SIZE) * (height / SQUARE_SIZE) + 64;
     Square *sq = (Square *)malloc(sizeof(Square) * (size_t)capacity);
     if (!sq) { *out_count = 0; return NULL; }
@@ -318,8 +357,8 @@ static Square *mask_to_squares(const uint8_t *mask, int width, int height,
     for (int gy = 0; gy * cell < height; gy++) {
         int row_shift = (gy & 1) ? (cell / 2) : 0;
         for (int gx = 0; gx * cell < width; gx++) {
-            int jx = rng_range(0, 1);
-            int jy = rng_range(0, 1);
+            int jx = rng_range(0, 2);
+            int jy = rng_range(0, 2);
             int sx = gx * cell + row_shift + jx;
             int sy = gy * cell + jy;
             if (sx < 0) sx = 0;
@@ -395,11 +434,14 @@ int save_bg_animated_webp(const char *filepath, int width, int height) {
     }
     printf("layout: %d squares\n", num_squares);
 
-    /* Generate text mask via GDI and convert to stationary squares */
+    /* Generate text mask via GDI, dilate it, and convert to stationary squares */
     int num_text_sq = 0;
     Square *text_squares = NULL;
     uint8_t *text_mask = generate_text_mask(width, height);
     if (text_mask) {
+        /* Dilate mask by 3px to create clear zone around text */
+        dilate_mask(text_mask, width, height, 3);
+
         text_squares = mask_to_squares(text_mask, width, height,
                                        ANIM_TEXT_SEED, &num_text_sq);
         printf("text:   %d squares\n", num_text_sq);

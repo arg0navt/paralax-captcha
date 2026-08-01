@@ -22,10 +22,11 @@
 #define ANIM_DURATION_SEC   5      /* 5 seconds */
 #define ANIM_FPS            60     /* 60 fps */
 #define ANIM_TOTAL_FRAMES   (ANIM_FPS * ANIM_DURATION_SEC) /* 300 */
-#define ANIM_SCROLL_MULT    3      /* full canvas scrolls per loop       */
+#define ANIM_SCROLL_MULT    6      /* full canvas scrolls per loop       */
 #define ANIM_SEED           12345  /* deterministic RNG seed             */
 #define ANIM_FONT_SIZE      70     /* text font size in pixels           */
 #define ANIM_TEXT_SEED      54321  /* RNG seed for text transparency      */
+#define ANIM_LETTER_GAP     20     /* pixels between letters             */
 
 /* ── Square layout entry ────────────────────────────────────────── */
 typedef struct {
