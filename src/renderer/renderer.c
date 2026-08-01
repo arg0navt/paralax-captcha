@@ -48,8 +48,8 @@ void prepare_bg(int width, int height) {
         bg_buffer[i + 3] = BG_COLOR_A;
     }
 
-    /* Then stamp the 2×2 squares on top (legacy grid: 3px gap → cell=5) */
-    const int cell = SQUARE_SIZE + 3;
+    /* Then stamp the 4×4 squares on top (legacy grid: 6px gap → cell=10) */
+    const int cell = SQUARE_SIZE + 6;
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             if ((x % cell) < SQUARE_SIZE && (y % cell) < SQUARE_SIZE) {
@@ -137,8 +137,8 @@ static int rng_range(int min, int max) {
 Square *generate_layout(int width, int height, uint32_t seed, int *out_count) {
     rng_seed(seed);
 
-    /* Base cell: 2 (square) + 3 = 5px → jitter 0..2 → gap = 2..5px */
-    const int cell = SQUARE_SIZE + 3;
+    /* Base cell: 4 (square) + 6 = 10px → jitter 0..4 → gap = 4..10px */
+    const int cell = SQUARE_SIZE + 6;
 
     /* Upper bound: ceil(w/cell) * ceil(h/cell) */
     int cols = (width  + cell - 1) / cell;
@@ -152,8 +152,8 @@ Square *generate_layout(int width, int height, uint32_t seed, int *out_count) {
         /* Stagger every other row by half a cell to break horizontal lines */
         int row_shift = (gy & 1) ? (cell / 2) : 0;
         for (int gx = 0; gx * cell < width; gx++) {
-            int jx = rng_range(0, 2);
-            int jy = rng_range(0, 2);
+            int jx = rng_range(0, 4);
+            int jy = rng_range(0, 4);
             int sx = gx * cell + row_shift + jx;
             int sy = gy * cell + jy;
             /* Clamp so the square stays inside the canvas */
@@ -164,7 +164,7 @@ Square *generate_layout(int width, int height, uint32_t seed, int *out_count) {
             if (count < capacity) {
                 sq[count].x = (int16_t)sx;
                 sq[count].y = (int16_t)sy;
-                sq[count].transparent_idx = (uint8_t)(rng_next() % 4);
+                sq[count].transparent_idx = (uint8_t)(rng_next() % 16);
                 count++;
             }
         }
@@ -235,7 +235,7 @@ void render_frame(uint8_t *buf, int width, int height,
 /* ── generate_text_mask ──────────────────────────────────────────── *
  *  Uses Windows GDI to render "Привет" in bold 30px and returns
  *  a binary mask (1 = text pixel, 0 = empty). Caller frees with free(). */
-static uint8_t *generate_text_mask(int width, int height) {
+uint8_t *generate_text_mask(int width, int height) {
     uint8_t *mask = (uint8_t *)calloc(1, (size_t)width * height);
     if (!mask) return NULL;
 
@@ -265,14 +265,14 @@ static uint8_t *generate_text_mask(int width, int height) {
     FillRect(mem_dc, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH));
 
     /* Create bold Arial */
-    HFONT font = CreateFontW(-ANIM_FONT_SIZE, 0, 0, 0, FW_BOLD,
+    HFONT font = CreateFontW(-ANIM_FONT_SIZE, 0, 0, 0, FW_NORMAL,
         FALSE, FALSE, FALSE, DEFAULT_CHARSET,
         OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Arial");
     if (font) {
         HFONT old_font = (HFONT)SelectObject(mem_dc, font);
 
-        const wchar_t *text = L"Hello";
+        const wchar_t *text = L"HELLO";
         int text_len = 5;
 
         /* Measure total width with ANIM_LETTER_GAP between letters */
@@ -316,7 +316,7 @@ static uint8_t *generate_text_mask(int width, int height) {
 /* ── dilate_mask ────────────────────────────────────────────────── *
  *  Expands the mask by `radius` pixels: any pixel within `radius`
  *  of a set pixel also becomes set.  Done in-place.               */
-static void dilate_mask(uint8_t *mask, int width, int height, int radius) {
+void dilate_mask(uint8_t *mask, int width, int height, int radius) {
     uint8_t *src = (uint8_t *)malloc((size_t)width * height);
     if (!src) return;
     memcpy(src, mask, (size_t)width * height);
@@ -343,12 +343,13 @@ static void dilate_mask(uint8_t *mask, int width, int height, int radius) {
  *  Converts a binary text mask into an array of 2×2 Squares using
  *  the same grid + jitter + stagger as the background layout.
  *  One pixel per square is randomly made transparent.               */
-static Square *mask_to_squares(const uint8_t *mask, int width, int height,
+Square *mask_to_squares(const uint8_t *mask, int width, int height,
                                uint32_t seed, int *out_count) {
     rng_seed(seed);
 
     /* Same cell as background: 2 + 3 = 5px, jitter 0..2 → gap 2..5px */
-    const int cell = SQUARE_SIZE + 3;
+    /* Same cell as background: 4 + 6 = 10px, jitter 0..4 → gap 4..10px */
+    const int cell = SQUARE_SIZE + 6;
     int capacity = (width / SQUARE_SIZE) * (height / SQUARE_SIZE) + 64;
     Square *sq = (Square *)malloc(sizeof(Square) * (size_t)capacity);
     if (!sq) { *out_count = 0; return NULL; }
@@ -357,8 +358,8 @@ static Square *mask_to_squares(const uint8_t *mask, int width, int height,
     for (int gy = 0; gy * cell < height; gy++) {
         int row_shift = (gy & 1) ? (cell / 2) : 0;
         for (int gx = 0; gx * cell < width; gx++) {
-            int jx = rng_range(0, 2);
-            int jy = rng_range(0, 2);
+            int jx = rng_range(0, 4);
+            int jy = rng_range(0, 4);
             int sx = gx * cell + row_shift + jx;
             int sy = gy * cell + jy;
             if (sx < 0) sx = 0;
@@ -376,7 +377,7 @@ static Square *mask_to_squares(const uint8_t *mask, int width, int height,
             if (has_text && count < capacity) {
                 sq[count].x = (int16_t)sx;
                 sq[count].y = (int16_t)sy;
-                sq[count].transparent_idx = (uint8_t)(rng_next() % 4);
+                sq[count].transparent_idx = (uint8_t)(rng_next() % 16);
                 count++;
             }
         }
@@ -388,7 +389,7 @@ static Square *mask_to_squares(const uint8_t *mask, int width, int height,
 /* ── render_text_squares ───────────────────────────────────────── *
  *  Draws stationary text squares on top of the frame buffer.
  *  Uses a brighter colour so text stands out against moving bg.     */
-static void render_text_squares(uint8_t *buf, int width, int height,
+void render_text_squares(uint8_t *buf, int width, int height,
                                  const Square *text_sq, int num_text_sq) {
     for (int i = 0; i < num_text_sq; i++) {
         int sx = text_sq[i].x;
@@ -439,8 +440,8 @@ int save_bg_animated_webp(const char *filepath, int width, int height) {
     Square *text_squares = NULL;
     uint8_t *text_mask = generate_text_mask(width, height);
     if (text_mask) {
-        /* Dilate mask by 3px to create clear zone around text */
-        dilate_mask(text_mask, width, height, 3);
+        /* Dilate mask by 6px to create clear zone around text */
+        dilate_mask(text_mask, width, height, 6);
 
         text_squares = mask_to_squares(text_mask, width, height,
                                        ANIM_TEXT_SEED, &num_text_sq);

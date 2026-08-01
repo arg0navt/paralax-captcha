@@ -1,7 +1,7 @@
 #ifndef MAIN_H
 #define MAIN_H
 
-#define WIDTH 320
-#define HEIGHT 240
+#define WIDTH  640
+#define HEIGHT 480
 
 #endif /* MAIN_H */
