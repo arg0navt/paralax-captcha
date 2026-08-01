@@ -1,8 +1,9 @@
-# Build output
-build/*.o
-build/paralax-captcha
+# Zig build output
+zig-cache/
+zig-out/
 
 # IDE files
+build/*
 .vscode/
 .idea/
 *.swp
